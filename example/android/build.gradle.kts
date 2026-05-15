@@ -61,10 +61,8 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            optimization.enable = true
             vcsInfo.include = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules-android.pro")
             signingConfig = signingConfigs.getByName(if (keystorePath != null) "github" else "release")
         }
         debug {
@@ -74,7 +72,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         create("benchmarkRelease") {
-            isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
         }

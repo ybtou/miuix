@@ -204,6 +204,9 @@ private class DrawBackdropNode(
     private val cascadeLayers: MutableList<GraphicsLayer> = mutableListOf()
     private var noiseLayer: GraphicsLayer? = null
 
+    // Reused per-frame scratch — applyDownsampleStep runs every draw.
+    private val maxCoordBuffer = FloatArray(2)
+
     private fun obtainCascadeLayer(index: Int): GraphicsLayer {
         val ctx = requireGraphicsContext()
         while (cascadeLayers.size <= index) {
@@ -503,9 +506,11 @@ private class DrawBackdropNode(
         shaderSrc: String,
     ) {
         if (isRuntimeShaderSupported()) {
+            maxCoordBuffer[0] = sourceW - 0.5f
+            maxCoordBuffer[1] = sourceH - 0.5f
             source.renderEffect = runtimeShaderEffect(
                 runtimeShader = effectScope.obtainRuntimeShader(shaderKey, shaderSrc).apply {
-                    setFloatUniform("imageWH", floatArrayOf(sourceW.toFloat(), sourceH.toFloat()))
+                    setFloatUniform("maxCoord", maxCoordBuffer)
                 },
                 uniformShaderName = "child",
             )
