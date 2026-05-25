@@ -4,19 +4,16 @@
 package top.yukonga.miuix.kmp.blur
 
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.ColorMatrixColorFilter
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import top.yukonga.miuix.kmp.blur.internal.BlurResult
 import top.yukonga.miuix.kmp.blur.internal.COLOR_CONTROLS_SHADER
 import top.yukonga.miuix.kmp.blur.internal.MAX_BLUR_TAPS
 import top.yukonga.miuix.kmp.blur.internal.chain
-import top.yukonga.miuix.kmp.blur.internal.colorFilterEffect
 import top.yukonga.miuix.kmp.blur.internal.runtimeShaderEffect as createRuntimeShaderEffect
 
 /**
@@ -49,19 +46,10 @@ sealed interface BackdropEffectScope :
 }
 
 /**
- * Applies a [ColorFilter] effect to the backdrop.
- */
-fun BackdropEffectScope.colorFilter(colorFilter: ColorFilter) {
-    if (!isRenderEffectSupported()) return
-    renderEffect = colorFilterEffect(renderEffect, colorFilter)
-}
-
-/**
  * Applies brightness, contrast, and saturation adjustments to the backdrop.
  *
- * Brightness is applied in linear (gamma 2.2) space when runtime shader support is
- * available, avoiding the hue shift of a linear `ColorMatrix` offset. Falls back to
- * a `ColorMatrix` (sRGB-space) implementation otherwise.
+ * Brightness is applied in linear (gamma 2.2) space via a runtime shader to avoid
+ * the hue shift a linear `ColorMatrix` offset would introduce.
  */
 fun BackdropEffectScope.colorControls(
     brightness: Float = 0f,
@@ -70,18 +58,14 @@ fun BackdropEffectScope.colorControls(
 ) {
     if (brightness == 0f && contrast == 1f && saturation == 1f) return
 
-    if (isRuntimeShaderSupported()) {
-        runtimeShaderEffect(
-            key = "ColorControls",
-            shaderString = COLOR_CONTROLS_SHADER,
-            uniformShaderName = "child",
-        ) {
-            setFloatUniform("in_brightness", brightness)
-            setFloatUniform("in_contrast", contrast)
-            setFloatUniform("in_saturation", saturation)
-        }
-    } else {
-        colorFilter(colorControlsColorFilter(brightness, contrast, saturation))
+    runtimeShaderEffect(
+        key = "ColorControls",
+        shaderString = COLOR_CONTROLS_SHADER,
+        uniformShaderName = "child",
+    ) {
+        setFloatUniform("in_brightness", brightness)
+        setFloatUniform("in_contrast", contrast)
+        setFloatUniform("in_saturation", saturation)
     }
 }
 
@@ -89,7 +73,6 @@ fun BackdropEffectScope.colorControls(
  * Chains an arbitrary [RenderEffect] onto the backdrop effect pipeline.
  */
 fun BackdropEffectScope.effect(effect: RenderEffect) {
-    if (!isRenderEffectSupported()) return
     renderEffect = renderEffect.chain(effect)
 }
 
@@ -115,47 +98,11 @@ fun BackdropEffectScope.runtimeShaderEffect(
     uniformShaderName: String,
     block: RuntimeShader.() -> Unit,
 ) {
-    if (!isRuntimeShaderSupported()) return
-
     val effect = createRuntimeShaderEffect(
         runtimeShader = obtainRuntimeShader(key, shaderString).apply(block),
         uniformShaderName = uniformShaderName,
     )
     renderEffect = renderEffect.chain(effect)
-}
-
-// endregion
-
-// region Internal implementation
-
-private fun colorControlsColorFilter(
-    brightness: Float = 0f,
-    contrast: Float = 1f,
-    saturation: Float = 1f,
-): ColorFilter {
-    val invSat = 1f - saturation
-    val r = 0.213f * invSat
-    val g = 0.715f * invSat
-    val b = 0.072f * invSat
-
-    val c = contrast
-    val t = (0.5f - c * 0.5f + brightness) * 255f
-    val s = saturation
-
-    val cr = c * r
-    val cg = c * g
-    val cb = c * b
-    val cs = c * s
-
-    val colorMatrix = ColorMatrix(
-        floatArrayOf(
-            cr + cs, cg, cb, 0f, t,
-            cr, cg + cs, cb, 0f, t,
-            cr, cg, cb + cs, 0f, t,
-            0f, 0f, 0f, 1f, 0f,
-        ),
-    )
-    return ColorMatrixColorFilter(colorMatrix)
 }
 
 internal abstract class BackdropEffectScopeImpl :
@@ -173,14 +120,12 @@ internal abstract class BackdropEffectScopeImpl :
 
     var runtimeShaderCache: RuntimeShaderCache = RuntimeShaderCacheImpl()
 
-    // Scratch buffers for createBlurEffect — reused across observe-driven updateEffects()
-    // invocations. X and Y axes are computed sequentially so they share the same buffers.
+    // Scratch reused across updateEffects(); X / Y axes are sequential and share buffers.
     internal val blurRawWeights: DoubleArray = DoubleArray(14)
     internal val blurParamOffsets: FloatArray = FloatArray(MAX_BLUR_TAPS)
     internal val blurParamWeights: FloatArray = FloatArray(MAX_BLUR_TAPS)
 
-    // Lazy per-tapCount uniform buffers for setFloatUniform — uniform arrays require
-    // exact length matching the shader declaration. Indexed [0..MAX_BLUR_TAPS]; slot 0 unused.
+    // Per-tapCount uniform buffers — uniform array length must match the shader declaration.
     private val shaderOffsetsByTaps: Array<FloatArray?> = arrayOfNulls(MAX_BLUR_TAPS + 1)
     private val shaderWeightsByTaps: Array<FloatArray?> = arrayOfNulls(MAX_BLUR_TAPS + 1)
 
@@ -192,6 +137,13 @@ internal abstract class BackdropEffectScopeImpl :
 
     internal val blendModesBuffer: FloatArray = FloatArray(MAX_BLEND_LAYERS)
     internal val blendColorsBuffer: FloatArray = FloatArray(MAX_BLEND_LAYERS * 4)
+
+    // chain() allocates a native RenderEffect — cache last result keyed on inputs.
+    internal var cachedBlurRadiusX: Float = Float.NaN
+    internal var cachedBlurRadiusY: Float = Float.NaN
+    internal var cachedBlurSizeW: Float = Float.NaN
+    internal var cachedBlurSizeH: Float = Float.NaN
+    internal var cachedBlurResult: BlurResult? = null
 
     override fun obtainRuntimeShader(key: String, string: String): RuntimeShader = runtimeShaderCache.obtainRuntimeShader(key, string)
 
@@ -233,15 +185,14 @@ internal abstract class BackdropEffectScopeImpl :
         renderEffect = null
         downscaleFactor = 1
         noiseCoefficient = 0f
+        cachedBlurRadiusX = Float.NaN
+        cachedBlurRadiusY = Float.NaN
+        cachedBlurSizeW = Float.NaN
+        cachedBlurSizeH = Float.NaN
+        cachedBlurResult = null
     }
 }
 
-/**
- * Internal downcast helper. [BackdropEffectScope] is a sealed interface whose only
- * implementation is [BackdropEffectScopeImpl] (enforced at compile time), so this cast
- * cannot fail at runtime.
- */
+/** [BackdropEffectScope] is sealed with only [BackdropEffectScopeImpl], so this cast is safe. */
 internal val BackdropEffectScope.impl: BackdropEffectScopeImpl
     get() = this as BackdropEffectScopeImpl
-
-// endregion
