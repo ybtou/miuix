@@ -66,25 +66,29 @@ fun Modifier.drawBackdrop(
     onDrawFront: (DrawScope.() -> Unit)? = null,
     contentBlendMode: BlendMode = BlendMode.SrcOver,
     enabled: Boolean = true,
-): Modifier = this
-    .then(
-        if (layerBlock != null) Modifier.graphicsLayer(layerBlock) else Modifier,
-    )
-    .then(
-        DrawBackdropElement(
-            backdrop = backdrop,
-            shape = shape,
-            effects = effects,
-            highlight = highlight,
-            layerBlock = layerBlock,
-            onDrawBehind = onDrawBehind,
-            onDrawBackdrop = onDrawBackdrop,
-            onDrawSurface = onDrawSurface,
-            onDrawFront = onDrawFront,
-            contentBlendMode = contentBlendMode,
-            enabled = enabled,
-        ),
-    )
+): Modifier {
+    // The effect pipeline (blur / blend / highlight / custom passes) is built on RuntimeShader.
+    val effectiveEnabled = enabled && isRuntimeShaderSupported()
+    return this
+        .then(
+            if (layerBlock != null) Modifier.graphicsLayer(layerBlock) else Modifier,
+        )
+        .then(
+            DrawBackdropElement(
+                backdrop = backdrop,
+                shape = shape,
+                effects = effects,
+                highlight = highlight,
+                layerBlock = layerBlock,
+                onDrawBehind = onDrawBehind,
+                onDrawBackdrop = onDrawBackdrop,
+                onDrawSurface = onDrawSurface,
+                onDrawFront = onDrawFront,
+                contentBlendMode = contentBlendMode,
+                enabled = effectiveEnabled,
+            ),
+        )
+}
 
 private class DrawBackdropElement(
     val backdrop: Backdrop,
@@ -288,7 +292,7 @@ private class DrawBackdropNode(
                     fullHeight,
                 )
             } else {
-                // Multi-step cascade, single-pass wider filter when possible:
+                // Multistep cascade, single-pass wider filter when possible:
                 //   sf =  4: backdrop ½ → 2x box → ¼                     (1 cascade layer)
                 //   sf =  8: backdrop ½ → 4x box → ⅛                     (1 cascade layer)
                 //   sf = 16: backdrop ½ → 4x box → ⅛ → 2x box → 1/16     (2 cascade layers)
