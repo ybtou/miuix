@@ -1,6 +1,6 @@
 [versions]
 agp = "9.2.1"
-kotlin = "2.3.21"
+kotlin = "2.4.0"
 kotlinx-serialization = "1.11.0"
 
 about-libraries = "14.2.1"
@@ -8,7 +8,7 @@ androidx-activity = "1.13.0"
 androidx-collection = "1.6.0"
 androidx-navigation3 = "1.1.2"
 jetbrains-androidx-navigationevent = "1.1.0"
-jetbrains-compose-multiplatform = "1.11.0"
+jetbrains-compose-multiplatform = "1.11.1"
 jetbrains-compose-window-size = "1.9.0"
 jetbrains-dokka = "2.2.0"
 jetbrains-compose-hotReload = "1.1.1"
