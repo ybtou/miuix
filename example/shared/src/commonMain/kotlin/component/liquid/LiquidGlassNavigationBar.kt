@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -58,6 +59,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -69,9 +72,10 @@ import component.animation.InteractiveHighlight
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import lazyfont.LazyText
+import top.yukonga.miuix.kmp.basic.BadgedBox
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.blur
 import top.yukonga.miuix.kmp.blur.drawBackdrop
@@ -167,6 +171,7 @@ internal fun IosLiquidGlassNavigationBar(
     backdrop: LayerBackdrop?,
     isBlurActive: Boolean,
     modifier: Modifier = Modifier,
+    badge: (Int) -> (@Composable () -> Unit)? = { null },
 ) {
     val isDark = isInDarkTheme()
     val pillShape = remember { CircleShape }
@@ -304,6 +309,7 @@ internal fun IosLiquidGlassNavigationBar(
                         role = Role.Tab,
                         onClick = { currentIndex = index },
                     )
+                    .semantics { selected = index == currentIndex }
                     .weight(1f)
                     .fillMaxHeight()
                     .graphicsLayer {
@@ -314,12 +320,15 @@ internal fun IosLiquidGlassNavigationBar(
                 verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
                 horizontalAlignment = CenterHorizontally,
             ) {
-                Icon(
-                    modifier = Modifier.size(22.dp),
-                    imageVector = item.icon,
-                    contentDescription = item.label,
-                )
-                Text(
+                BadgedBox(badge = { badge(index)?.invoke() }) {
+                    Icon(
+                        modifier = Modifier.size(22.dp),
+                        imageVector = item.icon,
+                        // Decorative: the adjacent label names the item; avoids TalkBack double-read.
+                        contentDescription = null,
+                    )
+                }
+                LazyText(
                     text = item.label,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal,
@@ -340,6 +349,7 @@ internal fun IosLiquidGlassNavigationBar(
             CompositionLocalProvider(LocalContentColor provides tabContentColor) {
                 Row(
                     modifier = Modifier
+                        .selectableGroup()
                         .onSizeChanged { coords ->
                             totalWidthPx = coords.width.toFloat()
                             val contentWidthPx = totalWidthPx - with(density) { 8.dp.toPx() }

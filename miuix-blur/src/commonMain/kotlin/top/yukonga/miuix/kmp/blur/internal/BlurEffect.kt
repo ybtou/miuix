@@ -11,31 +11,44 @@ import kotlin.math.exp
 /** Conversion factor from blur radius in pixels to Blur sigma. */
 internal const val BLUR_RADIUS_TO_SIGMA = 0.45f
 
-/** Max kernel reach in downsampled pixels — outermost pair reaches ~offset 12.5, rounded up. */
-internal const val BLUR_KERNEL_REACH = 14
+/**
+ * Max kernel reach in downsampled pixels: the outermost merged tap pair tops out just below offset
+ * 12.5, where bilinear sampling reaches texel 13 — so 13 exactly covers the kernel, no darkening.
+ */
+internal const val BLUR_KERNEL_REACH = 13
 
 private const val WEIGHT_THRESHOLD = 0.002
 
-internal data class BlurResult(
-    val renderEffect: RenderEffect,
-    val downscaleFactor: Int,
-)
+/** Highest downscale exponent (downScale = 1 shl exp); covers 1/2/4/8/16. */
+private const val MAX_DOWNSCALE_EXP = 4
 
-/** Creates a separable Blur [RenderEffect] with independent horizontal / vertical radii. */
+/**
+ * Pre-built Gaussian shader-cache keys, indexed `[tapCount][exp]` (exp = log2(downScale)), so
+ * the per-frame rebuild path in [createBlurEffect] avoids allocating a key string per axis.
+ */
+private val BLUR_H_KEYS: Array<Array<String>> = Array(MAX_BLUR_TAPS + 1) { n ->
+    Array(MAX_DOWNSCALE_EXP + 1) { exp -> "LMGauss${n}_H_d${1 shl exp}" }
+}
+private val BLUR_V_KEYS: Array<Array<String>> = Array(MAX_BLUR_TAPS + 1) { n ->
+    Array(MAX_DOWNSCALE_EXP + 1) { exp -> "LMGauss${n}_V_d${1 shl exp}" }
+}
+
+/**
+ * Builds the separable Blur [RenderEffect] (H then V) for an EXPLICIT [downScale] level using the
+ * per-axis variances already compensated for that level's box prefilter (see [adjustedVarianceForExp]).
+ * The shader cache keys carry [downScale] so the H/V passes and the cross-fade lo/hi levels each
+ * build from a separate shader instance and never alias each other's uniform arrays.
+ */
 internal fun createBlurEffect(
     radiusX: Float,
     radiusY: Float,
+    downScale: Int,
+    adjustedVarianceX: Float,
+    adjustedVarianceY: Float,
     size: Size,
     scope: BackdropEffectScopeImpl,
-): BlurResult? {
+): RenderEffect? {
     if (radiusX <= 0f && radiusY <= 0f) return null
-
-    val sigmaX = radiusX * BLUR_RADIUS_TO_SIGMA
-    val sigmaY = radiusY * BLUR_RADIUS_TO_SIGMA
-    val (adjustedVarianceX, downScaleX) = computeDownScaleParams(sigmaX)
-    val (adjustedVarianceY, downScaleY) = computeDownScaleParams(sigmaY)
-
-    val downScale = maxOf(downScaleX, downScaleY)
 
     // Texture size uses the same integer arithmetic as drawBackdropLayer
     // to match the actual recording dimensions (size includes padding).
@@ -46,9 +59,13 @@ internal fun createBlurEffect(
     val paramOffsets = scope.blurParamOffsets
     val paramWeights = scope.blurParamWeights
 
+    // exp = log2(downScale); downScale is always a power of two in 1..16.
+    val exp = downScale.countTrailingZeroBits()
+
     var effect: RenderEffect? = null
 
-    // H / V use distinct cache keys so each pass holds its own uniform state.
+    // H / V use distinct cache keys so each pass builds from its own shader instance; the
+    // _d$downScale suffix additionally isolates the cross-fade lo/hi levels from one another.
     if (radiusX > 0f) {
         val n = computeBlurParamsInto(adjustedVarianceX, rawScratch, paramOffsets, paramWeights)
         if (n > 0) {
@@ -60,7 +77,7 @@ internal fun createBlurEffect(
                 shaderWeights[i] = paramWeights[i]
             }
             val hShader = scope.obtainRuntimeShader(
-                "LMGauss${n}_H",
+                BLUR_H_KEYS[n][exp],
                 BLUR_SHADER_BY_TAP[n],
             ).apply {
                 setFloatUniform("in_blurOffset", shaderOffsets)
@@ -82,7 +99,7 @@ internal fun createBlurEffect(
                 shaderWeights[i] = paramWeights[i]
             }
             val vShader = scope.obtainRuntimeShader(
-                "LMGauss${n}_V",
+                BLUR_V_KEYS[n][exp],
                 BLUR_SHADER_BY_TAP[n],
             ).apply {
                 setFloatUniform("in_blurOffset", shaderOffsets)
@@ -94,51 +111,61 @@ internal fun createBlurEffect(
         }
     }
 
-    return effect?.let { BlurResult(renderEffect = it, downscaleFactor = downScale) }
+    return effect
 }
 
-internal data class DownScaleParams(val adjustedVariance: Float, val downScale: Int)
+/**
+ * Implied box-prefilter variance (full-resolution px²) absorbed by the downsample at each level;
+ * index = log2(downScale). The separable Gaussian only supplies the remaining variance:
+ * `adjustedVariance = (σ² - impliedBox) / downScale²`. These values reproduce the original
+ * branch/halving constants exactly, and are calibrated against the pop-free 4×→8× boundary.
+ */
+private val IMPLIED_BOX_VARIANCE = floatArrayOf(0f, 3.0265f, 7.5625f, 9.0f, 202.696f)
+
+/** Downscale exponent (downScale = `1 shl exp`, i.e. 1/2/4/8/16) chosen for a given σ². */
+internal fun downScaleExpFor(sigmaSquared: Float): Int = when {
+    sigmaSquared >= 1945f -> 4
+    sigmaSquared > 400f -> 3
+    sigmaSquared >= 90.25f -> 2
+    sigmaSquared >= 12.6f -> 1
+    else -> 0
+}
+
+/** Box-compensated Gaussian variance (in downscaled px²) for [sigmaSquared] at downscale [exp]. */
+internal fun adjustedVarianceForExp(sigmaSquared: Float, exp: Int): Float {
+    val ds = (1 shl exp).toFloat()
+    return ((sigmaSquared - IMPLIED_BOX_VARIANCE[exp]) / (ds * ds)).coerceAtLeast(0.1f)
+}
 
 /**
- * Picks an adaptive [DownScaleParams.downScale] (1/2/4/8/16) from σ² and returns the
- * variance compensated for the box-filter pre-filtering applied during downsampling.
+ * Bracket of two adjacent downscale levels to cross-fade between, plus a smoothstep [blend]
+ * weight of the higher level. Outside any transition band [expLo] == [expHi] and [blend] is 0.
  */
-internal fun computeDownScaleParams(sigma: Float): DownScaleParams {
-    val sigmaSquared = sigma * sigma
-    var adjustedVariance: Float
-    var downScaleExp: Int
+internal data class DownScaleBlend(val expLo: Int, val expHi: Int, val blend: Float)
 
-    when {
-        sigmaSquared > 400f -> {
-            // Very large blur: 8x base downscale
-            adjustedVariance = 0.015625f * sigmaSquared - 0.140625f
-            downScaleExp = 3
-        }
+/** Sigma at each downscale boundary (= √ of the σ² thresholds in [downScaleExpFor]). */
+private val BOUNDARY_SIGMA = floatArrayOf(3.5496478f, 9.5f, 20f, 44.10215f)
 
-        sigmaSquared >= 90.25f -> {
-            // Medium-large blur: 4x base downscale
-            adjustedVariance = 0.0625f * sigmaSquared - 0.47265625f
-            downScaleExp = 2
-        }
+/** Half-width of each cross-fade transition band, as a fraction of the boundary radius/sigma. */
+private const val BLEND_BAND_FRACTION = 0.12f
 
-        else -> {
-            // Small blur: no base downscale
-            adjustedVariance = sigmaSquared
-            downScaleExp = 0
+/**
+ * Within ±[BLEND_BAND_FRACTION] of a downscale boundary, returns the two bracketing levels and a
+ * smoothstep blend weight (0 at the band's lower edge → 1 at the upper edge); elsewhere returns a
+ * single level with `blend == 0`. Cross-fading the two fully-rendered levels across the band turns
+ * the otherwise-instant downscale switch into a continuous transition, hiding the "pop".
+ */
+internal fun computeDownScaleBlend(sigma: Float): DownScaleBlend {
+    for (b in BOUNDARY_SIGMA.indices) {
+        val lo = BOUNDARY_SIGMA[b] * (1f - BLEND_BAND_FRACTION)
+        val hi = BOUNDARY_SIGMA[b] * (1f + BLEND_BAND_FRACTION)
+        if (sigma > lo && sigma < hi) {
+            val tRaw = ((sigma - lo) / (hi - lo)).coerceIn(0f, 1f)
+            return DownScaleBlend(expLo = b, expHi = b + 1, blend = tRaw * tRaw * (3f - 2f * tRaw))
         }
     }
-
-    // If adjusted variance is still too large, halve the scale again
-    val threshold = if (sigmaSquared < 100f) 12.6f else 30.25f
-    if (adjustedVariance >= threshold) {
-        downScaleExp++
-        adjustedVariance = adjustedVariance * 0.25f - 0.756625f
-    }
-
-    return DownScaleParams(
-        adjustedVariance = adjustedVariance.coerceAtLeast(0.1f),
-        downScale = (1 shl downScaleExp).coerceAtLeast(1),
-    )
+    val exp = downScaleExpFor(sigma * sigma)
+    return DownScaleBlend(expLo = exp, expHi = exp, blend = 0f)
 }
 
 /**
@@ -199,12 +226,10 @@ internal fun computeBlurParamsInto(
     // 5. Center weight = residual ensuring sum(weights) = 0.5
     //    (each weight is counted twice due to symmetric sampling, so 2×0.5 = 1.0)
     var pairWeightSum = 0f
-    @Suppress("EmptyRange")
     for (j in 1 until tapCount) pairWeightSum += outWeights[j]
     outWeights[0] = (0.5f - pairWeightSum).coerceAtLeast(0f)
 
     // 6. Validity check: zero out weights outside (0, 1)
-    @Suppress("EmptyRange")
     for (j in 0 until tapCount) {
         if (outWeights[j] <= 0f || outWeights[j] >= 1f) {
             outWeights[j] = 0f

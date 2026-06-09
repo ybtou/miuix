@@ -77,8 +77,10 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+import lazyfont.LazyText
 import navigation3.Navigator
 import navigation3.Route
+import top.yukonga.miuix.kmp.basic.Badge
 import top.yukonga.miuix.kmp.basic.FabPosition
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
@@ -336,6 +338,7 @@ private fun WideScreenContent(
                             onClick = { mainPagerState.animateToPage(index) },
                             icon = item.icon,
                             label = item.label,
+                            badge = navigationItemBadge(index, appState.showNavigationBarBadge),
                         )
                     }
                 }
@@ -490,6 +493,7 @@ private fun NavigationBar(
                             onClick = { mainPagerState.animateToPage(index) },
                             icon = item.icon,
                             label = item.label,
+                            badge = navigationItemBadge(index, appState.showNavigationBarBadge),
                         )
                     }
                 }
@@ -510,6 +514,7 @@ private fun NavigationBar(
                         onItemClick = { mainPagerState.animateToPage(it) },
                         backdrop = backdrop,
                         isBlurActive = blurActive,
+                        badge = { navigationItemBadge(it, appState.showNavigationBarBadge) },
                     )
                 } else {
                     FloatingNavigationBar(
@@ -538,6 +543,7 @@ private fun NavigationBar(
                                 onClick = { mainPagerState.animateToPage(index) },
                                 icon = item.icon,
                                 label = item.label,
+                                badge = navigationItemBadge(index, appState.showNavigationBarBadge),
                             )
                         }
                     }
@@ -646,6 +652,17 @@ private fun FloatingNavigationBarAlignment.toAlignment(): Alignment.Horizontal =
     FloatingNavigationBarAlignment.Center -> CenterHorizontally
     FloatingNavigationBarAlignment.Start -> Alignment.Start
     FloatingNavigationBarAlignment.End -> Alignment.End
+}
+
+/**
+ * The optional badge for navigation item [index], shown only when [show] is enabled: a numeric badge
+ * on one item and a dot badge on another to showcase both styles. Returns null when disabled.
+ */
+private fun navigationItemBadge(index: Int, show: Boolean): (@Composable () -> Unit)? = when {
+    !show -> null
+    index == 1 -> ({ Badge { LazyText("8") } })
+    index == 3 -> ({ Badge() })
+    else -> null
 }
 
 @Composable

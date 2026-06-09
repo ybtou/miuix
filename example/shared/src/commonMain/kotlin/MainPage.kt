@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import component.arrowSection
+import component.badgeSection
 import component.basicComponentSection
 import component.blurSection
 import component.bottomSheetSection
@@ -47,17 +48,19 @@ import component.spinnerSection
 import component.switchSection
 import component.tabRowSection
 import component.textFieldSection
+import component.tooltipSection
+import lazyfont.LazyInputField
+import lazyfont.LazyText
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TooltipBox
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -251,32 +254,38 @@ fun MainPage(
                     scrollBehavior = topAppBarScrollBehavior,
                     color = barColor,
                     actions = {
-                        OverlayIconCascadingDropdownMenu(
-                            entries = cascadingEntries,
-                            collapseOnSelection = true,
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Tune,
-                                contentDescription = "Tune",
-                            )
+                        TooltipBox(text = "Options") {
+                            OverlayIconCascadingDropdownMenu(
+                                entries = cascadingEntries,
+                                collapseOnSelection = true,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Tune,
+                                    contentDescription = "Tune",
+                                )
+                            }
                         }
-                        OverlayIconDropdownMenu(
-                            entries = optionItems,
-                            collapseOnSelection = false,
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Sort,
-                                contentDescription = "Sort",
-                            )
+                        TooltipBox(text = "Sort") {
+                            OverlayIconDropdownMenu(
+                                entries = optionItems,
+                                collapseOnSelection = false,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Sort,
+                                    contentDescription = "Sort",
+                                )
+                            }
                         }
-                        OverlayIconDropdownMenu(
-                            entries = multiSelectItems,
-                            collapseOnSelection = false,
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.SelectAll,
-                                contentDescription = "SelectAll",
-                            )
+                        TooltipBox(text = "Select all") {
+                            OverlayIconDropdownMenu(
+                                entries = multiSelectItems,
+                                collapseOnSelection = false,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.SelectAll,
+                                    contentDescription = "SelectAll",
+                                )
+                            }
                         }
                     },
                 )
@@ -299,7 +308,7 @@ fun MainPage(
                     SearchBar(
                         modifier = Modifier.padding(bottom = 12.dp),
                         inputField = {
-                            InputField(
+                            LazyInputField(
                                 query = searchValue,
                                 onQueryChange = { searchValue = it },
                                 onSearch = { expanded = false },
@@ -309,7 +318,7 @@ fun MainPage(
                             )
                         },
                         outsideEndAction = {
-                            Text(
+                            LazyText(
                                 modifier = Modifier
                                     .padding(end = 12.dp)
                                     .clickable(
@@ -341,23 +350,25 @@ fun MainPage(
                 }
                 if (notExpanded) {
                     basicComponentSection()
+                    switchSection()
                     checkboxSection()
                     radioButtonSection()
-                    switchSection()
+                    buttonSection()
+                    tabRowSection()
                     arrowSection()
                     dialogSection()
                     bottomSheetSection()
                     dropdownSection()
                     spinnerSection()
-                    buttonSection()
                     snackbarSection(snackbarHostState)
-                    progressIndicatorSection()
                     textFieldSection()
+                    progressIndicatorSection()
                     sliderSection()
-                    tabRowSection()
+                    cardSection()
+                    tooltipSection()
+                    badgeSection()
                     numberPickerSection()
                     colorPickerSection()
-                    cardSection()
                     blurSection()
                     otherPageSection()
                     item { Spacer(modifier = Modifier.height(12.dp)) }

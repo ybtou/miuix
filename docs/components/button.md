@@ -98,11 +98,12 @@ Button(
 | onClick           | () -> Unit                | Callback triggered on click       | -                                 | Yes      |
 | modifier          | Modifier                  | Modifier applied to the button    | Modifier                          | No       |
 | enabled           | Boolean                   | Whether the button is clickable   | true                              | No       |
-| colors            | TextButtonColors          | Text button color configuration   | ButtonDefaults.textButtonColors() | No       |
 | cornerRadius      | Dp                        | Corner radius of the button       | ButtonDefaults.CornerRadius       | No       |
 | minWidth          | Dp                        | Minimum width of the button       | ButtonDefaults.MinWidth           | No       |
 | minHeight         | Dp                        | Minimum height of the button      | ButtonDefaults.MinHeight          | No       |
+| colors            | TextButtonColors          | Text button color configuration   | ButtonDefaults.textButtonColors() | No       |
 | insideMargin      | PaddingValues             | Internal padding of the button    | ButtonDefaults.InsideMargin       | No       |
+| textStyle         | TextStyle?                | Text style of the button text     | null (MiuixTheme.textStyles.button)| No      |
 | interactionSource | MutableInteractionSource? | Interaction source for the button | null                              | No       |
 | indication        | Indication?               | Indication for click interactions | LocalIndication.current           | No       |
 

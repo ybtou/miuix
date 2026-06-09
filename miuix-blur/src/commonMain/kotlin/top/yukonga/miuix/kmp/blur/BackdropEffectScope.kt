@@ -10,7 +10,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import top.yukonga.miuix.kmp.blur.internal.BlurResult
 import top.yukonga.miuix.kmp.blur.internal.COLOR_CONTROLS_SHADER
 import top.yukonga.miuix.kmp.blur.internal.MAX_BLUR_TAPS
 import top.yukonga.miuix.kmp.blur.internal.chain
@@ -50,6 +49,10 @@ sealed interface BackdropEffectScope :
  *
  * Brightness is applied in linear (gamma 2.2) space via a runtime shader to avoid
  * the hue shift a linear `ColorMatrix` offset would introduce.
+ *
+ * @param brightness Brightness adjustment applied in linear space. 0 (default) leaves brightness unchanged.
+ * @param contrast Contrast multiplier. 1 (default) leaves contrast unchanged.
+ * @param saturation Saturation multiplier. 1 (default) leaves saturation unchanged.
  */
 fun BackdropEffectScope.colorControls(
     brightness: Float = 0f,
@@ -57,20 +60,38 @@ fun BackdropEffectScope.colorControls(
     saturation: Float = 1f,
 ) {
     if (brightness == 0f && contrast == 1f && saturation == 1f) return
+    if (!isRuntimeShaderSupported()) return
+    val scope = impl
 
-    runtimeShaderEffect(
-        key = "ColorControls",
-        shaderString = COLOR_CONTROLS_SHADER,
-        uniformShaderName = "child",
+    // Reuse the cached effect while the three values are unchanged.
+    val cached = scope.cachedColorResult
+    val effect = if (cached != null &&
+        scope.cachedColorBrightness == brightness &&
+        scope.cachedColorContrast == contrast &&
+        scope.cachedColorSaturation == saturation
     ) {
-        setFloatUniform("in_brightness", brightness)
-        setFloatUniform("in_contrast", contrast)
-        setFloatUniform("in_saturation", saturation)
+        cached
+    } else {
+        val shader = obtainRuntimeShader("ColorControls", COLOR_CONTROLS_SHADER).apply {
+            setFloatUniform("in_brightness", brightness)
+            setFloatUniform("in_contrast", contrast)
+            setFloatUniform("in_saturation", saturation)
+        }
+        createRuntimeShaderEffect(shader, "child").also {
+            scope.cachedColorBrightness = brightness
+            scope.cachedColorContrast = contrast
+            scope.cachedColorSaturation = saturation
+            scope.cachedColorResult = it
+        }
     }
+
+    renderEffect = renderEffect.chain(effect)
 }
 
 /**
  * Chains an arbitrary [RenderEffect] onto the backdrop effect pipeline.
+ *
+ * @param effect The [RenderEffect] to chain onto [BackdropEffectScope.renderEffect].
  */
 fun BackdropEffectScope.effect(effect: RenderEffect) {
     renderEffect = renderEffect.chain(effect)
@@ -139,12 +160,36 @@ internal abstract class BackdropEffectScopeImpl :
     internal val blendModesBuffer: FloatArray = FloatArray(MAX_BLEND_LAYERS)
     internal val blendColorsBuffer: FloatArray = FloatArray(MAX_BLEND_LAYERS * 4)
 
-    // chain() allocates a native RenderEffect — cache last result keyed on inputs.
+    // chain() allocates a native RenderEffect — cache last result keyed on inputs (incl. level).
     internal var cachedBlurRadiusX: Float = Float.NaN
     internal var cachedBlurRadiusY: Float = Float.NaN
     internal var cachedBlurSizeW: Float = Float.NaN
     internal var cachedBlurSizeH: Float = Float.NaN
-    internal var cachedBlurResult: BlurResult? = null
+    internal var cachedBlurExp: Int = -1
+    internal var cachedBlurResult: RenderEffect? = null
+
+    // blendColors()/colorControls() build RenderEffects that don't depend on the animating radius,
+    // so cache them: a fixed tint/adjustment rebuilds once, not per frame. A RenderEffect captures
+    // its shader's uniforms when created, so a built effect is unaffected by later re-sets of the
+    // tree-shared RuntimeShader — reuse across frames and both cross-fade passes is safe.
+    internal var cachedBlendColors: BlurColors? = null
+    internal var cachedBlendResult: RenderEffect? = null
+    internal var cachedColorBrightness: Float = Float.NaN
+    internal var cachedColorContrast: Float = Float.NaN
+    internal var cachedColorSaturation: Float = Float.NaN
+    internal var cachedColorResult: RenderEffect? = null
+
+    /**
+     * When >= 0, [blur] builds at this exact downscale exponent instead of the adaptive choice.
+     * The node sets it for the cross-fade lo/hi passes; -1 means auto. Internal — not exposed on
+     * the public [BackdropEffectScope] interface.
+     */
+    internal var forcedDownscaleExp: Int = -1
+
+    // Cross-fade bracket discovered by the auto [blur] pass (see computeDownScaleBlend).
+    internal var blurBlendExpLo: Int = 0
+    internal var blurBlendExpHi: Int = 0
+    internal var blurBlendFactor: Float = 0f
 
     override fun obtainRuntimeShader(key: String, string: String): RuntimeShader = runtimeShaderCache.obtainRuntimeShader(key, string)
 
@@ -190,7 +235,18 @@ internal abstract class BackdropEffectScopeImpl :
         cachedBlurRadiusY = Float.NaN
         cachedBlurSizeW = Float.NaN
         cachedBlurSizeH = Float.NaN
+        cachedBlurExp = -1
         cachedBlurResult = null
+        cachedBlendColors = null
+        cachedBlendResult = null
+        cachedColorBrightness = Float.NaN
+        cachedColorContrast = Float.NaN
+        cachedColorSaturation = Float.NaN
+        cachedColorResult = null
+        forcedDownscaleExp = -1
+        blurBlendExpLo = 0
+        blurBlendExpHi = 0
+        blurBlendFactor = 0f
     }
 }
 
