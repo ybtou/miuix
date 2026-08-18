@@ -30,12 +30,14 @@ data class AppState(
     val enableScrollEndHaptic: Boolean = true,
     val enableCornerClip: Boolean = true,
     val enableDim: Boolean = true,
-    val blockInputDuringTransition: Boolean = true,
-    val popDirectionFollowsSwipeEdge: Boolean = false,
+    val blockInputDuringTransition: Boolean = false,
+    val enableSwipeBack: Boolean = false,
+    val navTransitionStyle: Int = 0,
     // Squircle
     val enableSquircle: Boolean = true,
     // Blur
     val enableBlur: Boolean = true,
+    val blurStyle: Int = 0,
 )
 
 val LocalAppState = compositionLocalOf<AppState> {

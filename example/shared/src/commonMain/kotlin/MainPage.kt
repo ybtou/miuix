@@ -32,6 +32,7 @@ import component.badgeSection
 import component.basicComponentSection
 import component.blurSection
 import component.bottomSheetSection
+import component.breadcrumbBarSection
 import component.buttonSection
 import component.cardSection
 import component.checkboxSection
@@ -147,10 +148,12 @@ fun MainPage(
     var cascadingSortIndex by remember { mutableIntStateOf(0) }
     var cascadingViewIndex by remember { mutableIntStateOf(0) }
     var cascadingFilterIndex by remember { mutableIntStateOf(0) }
+    var cascadingCollapseOnSelection by remember { mutableStateOf(false) }
     val cascadingEntries = remember(
         cascadingSortIndex,
         cascadingViewIndex,
         cascadingFilterIndex,
+        cascadingCollapseOnSelection,
     ) {
         val sortLabels = listOf("Sort by capture date", "Sort by date added")
         val viewLabels = listOf("Group by date", "Compact")
@@ -167,6 +170,13 @@ fun MainPage(
             ),
             DropdownEntry(
                 items = listOf(
+                    DropdownItem(
+                        text = "Collapse On Selection",
+                        selected = cascadingCollapseOnSelection,
+                        onClick = {
+                            cascadingCollapseOnSelection = !cascadingCollapseOnSelection
+                        },
+                    ),
                     DropdownItem(
                         text = "View mode",
                         children = viewLabels.mapIndexed { idx, label ->
@@ -246,7 +256,7 @@ fun MainPage(
 
     Scaffold(
         topBar = {
-            BlurredBar(backdrop, blurActive) {
+            BlurredBar(backdrop, blurActive, topAppBarScrollBehavior) {
                 AdaptiveTopAppBar(
                     title = "Home",
                     showTopAppBar = appState.showTopAppBar,
@@ -257,7 +267,7 @@ fun MainPage(
                         TooltipBox(text = "Options") {
                             OverlayIconCascadingDropdownMenu(
                                 entries = cascadingEntries,
-                                collapseOnSelection = true,
+                                collapseOnSelection = cascadingCollapseOnSelection,
                             ) {
                                 Icon(
                                     imageVector = MiuixIcons.Tune,
@@ -355,6 +365,7 @@ fun MainPage(
                     radioButtonSection()
                     buttonSection()
                     tabRowSection()
+                    breadcrumbBarSection()
                     arrowSection()
                     dialogSection()
                     bottomSheetSection()

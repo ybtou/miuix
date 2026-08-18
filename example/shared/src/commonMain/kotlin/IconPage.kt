@@ -19,10 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,14 +30,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import component.SearchBarFake
 import component.SearchPager
@@ -58,6 +56,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
+import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import utils.AdaptiveTopAppBar
@@ -69,9 +68,6 @@ import utils.pageScrollModifiers
 import utils.rememberBlurBackdrop
 import kotlin.time.Duration.Companion.milliseconds
 
-private val IconListTopShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-private val IconListBottomShape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
-
 @Composable
 fun IconsPage(
     padding: PaddingValues,
@@ -80,14 +76,11 @@ fun IconsPage(
     val isWideScreen = LocalIsWideScreen.current
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val density = LocalDensity.current
-    // Quantized to whole pixels to avoid sub-pixel jitter; always 0 on wide screens (pinned SmallTopAppBar).
-    val dynamicTopPadding by remember(topAppBarScrollBehavior, density, isWideScreen) {
-        derivedStateOf {
-            if (isWideScreen) {
-                0.dp
-            } else {
-                with(density) { (12.dp * (1f - topAppBarScrollBehavior.state.collapsedFraction)).roundToPx().toDp() }
-            }
+
+    // A lambda keeps the collapse fraction out of composition; always 0 on wide screens (pinned bar).
+    val dynamicTopPadding: () -> Dp = remember(topAppBarScrollBehavior, isWideScreen) {
+        {
+            if (isWideScreen) 0.dp else 12.dp * (1f - topAppBarScrollBehavior.state.collapsedFraction)
         }
     }
 
@@ -135,7 +128,12 @@ fun IconsPage(
     // Blur state
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
-    val barColor = if (blurActive) colorScheme.surface.copy(alpha = 0f) else colorScheme.surface
+    val barColor = if (blurActive) Color.Transparent else colorScheme.surface
+    val searchCapsuleColor = if (blurActive) {
+        colorScheme.surfaceContainerHigh.copy(alpha = 0.8f)
+    } else {
+        null
+    }
 
     // Scroll state
     val lazyListState = rememberLazyListState()
@@ -143,7 +141,7 @@ fun IconsPage(
 
     Scaffold(
         topBar = {
-            BlurredBar(backdrop, blurActive) {
+            BlurredBar(backdrop, blurActive, topAppBarScrollBehavior) {
                 searchStatus.TopAppBarAnim(backgroundColor = barColor) {
                     AdaptiveTopAppBar(
                         title = "Icon",
@@ -172,7 +170,7 @@ fun IconsPage(
                                     },
                                 ),
                         ) {
-                            SearchBarFake(searchStatus.label, dynamicTopPadding)
+                            SearchBarFake(searchStatus.label, dynamicTopPadding, searchCapsuleColor)
                         }
                     }
                 }
@@ -184,6 +182,7 @@ fun IconsPage(
                 offsetY = searchOffsetY,
                 defaultResult = {},
                 searchBarTopPadding = dynamicTopPadding,
+                collapsedCapsuleColor = searchCapsuleColor,
             ) {
                 items(
                     count = filteredIndices.size,
@@ -244,7 +243,12 @@ fun IconsPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
-                            .clip(IconListTopShape)
+                            .squircleClip(
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomEnd = 0.dp,
+                                bottomStart = 0.dp,
+                            )
                             .background(colorScheme.surfaceContainer)
                             .padding(horizontal = 16.dp)
                             .padding(top = 12.dp, bottom = 8.dp),
@@ -268,14 +272,18 @@ fun IconsPage(
                     key = { "icon_$it" },
                 ) { index ->
                     val isLast = index == regularIcons.lastIndex
-                    val shape = if (isLast) IconListBottomShape else RectangleShape
                     val bottomPadding = if (isLast) 6.dp else 0.dp
                     val expanded = expandedIndex == index
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
-                            .clip(shape)
+                            .squircleClip(
+                                topStart = 0.dp,
+                                topEnd = 0.dp,
+                                bottomEnd = if (isLast) 16.dp else 0.dp,
+                                bottomStart = if (isLast) 16.dp else 0.dp,
+                            )
                             .background(colorScheme.surfaceContainer)
                             .clickable { expandedIndex = if (expanded) -1 else index }
                             .padding(horizontal = 16.dp)

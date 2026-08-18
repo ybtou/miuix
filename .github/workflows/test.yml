@@ -6,23 +6,29 @@ on:
     paths-ignore:
       - "README.md"
       - "CLAUDE.md"
+      - "AGENTS.md"
       - "docs/**"
   pull_request:
     branches: ["main"]
     paths-ignore:
       - "README.md"
       - "CLAUDE.md"
+      - "AGENTS.md"
       - "docs/**"
 
 permissions:
   contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     strategy:
       matrix:
         include:
-          - target: "iosSimulatorArm64Test"
+          - target: "spotlessCheck macosArm64Test iosSimulatorArm64Test"
             os: macos-latest
           - target: "desktopTest"
             os: ubuntu-latest
@@ -41,9 +47,15 @@ jobs:
           java-version: "21"
       - name: Build with Gradle
         uses: gradle/actions/setup-gradle@v6
-      - name: Run check
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Cache Kotlin/Native toolchain
         if: matrix.os == 'macos-latest'
-        run: ./gradlew check
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: ${{ runner.os }}-konan-
       - name: Run test
         run: ./gradlew ${{ matrix.target }}
       - name: Upload reports

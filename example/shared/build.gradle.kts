@@ -51,6 +51,7 @@ kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
+        binaries.executable()
     }
 
     js {
@@ -69,8 +70,7 @@ kotlin {
                 implementation(projects.miuixBlur)
                 implementation(projects.miuixSquircle)
                 implementation(projects.miuixIcons)
-                implementation(projects.miuixNavigation3Ui)
-                implementation(libs.androidx.navigation3.runtime)
+                implementation(projects.miuixNav)
                 implementation(libs.androidx.navigationevent)
                 implementation(libs.aboutlibraries.core)
                 implementation(libs.kotlinx.serialization.core)
